@@ -1,6 +1,3 @@
-// jsc_disasm.cc - Load .jsc (V8 SerializedCodeData) and disassemble with --print-bytecode
-// Compile: g++ -std=c++17 -I v8/include jsc_disasm.cc -o jsc_disasm \
-//          -L v8/out/release -lv8_monolith -pthread -licui18n -licuuc -licudata
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <unistd.h>
+#include <sys/wait.h>
 #include <libplatform/libplatform.h>
 #include <v8.h>
 
@@ -47,10 +46,9 @@ int main(int argc, char* argv[]) {
   std::string module_dir = argv[1];
   std::string out_dir = argv[2];
 
-  // Enable V8 flags for bytecode printing
+  // Enable V8 bytecode printing
   v8::V8::SetFlagsFromString("--print-bytecode");
   v8::V8::SetFlagsFromString("--print-bytecode-filter=*");
-  v8::V8::SetFlagsFromString("--trace-deserialization");
 
   v8::V8::InitializeICUDefaultLocation(argv[0]);
   auto platform = v8::platform::NewDefaultPlatform();
@@ -74,56 +72,80 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    // Redirect stdout to capture bytecode output
-    // We'll use a pipe approach - redirect to log file per module
-    std::string log_path = out_dir + "/" + fname + ".log";
+    std::string log_path = out_dir + "/" + fname + ".txt";
 
-    v8::Isolate::Scope isolate_scope(isolate);
-    v8::HandleScope handle_scope(isolate);
+    // Fork to capture stdout per module (since --print-bytecode goes to stdout)
+    int pipefd[2];
+    pipe(pipefd);
+    pid_t pid = fork();
+    if (pid == 0) {
+      // Child: redirect stdout to pipe
+      close(pipefd[0]);
+      dup2(pipefd[1], 1);
+      close(pipefd[1]);
 
-    v8::Local<v8::Context> context = v8::Context::New(isolate);
-    v8::Context::Scope context_scope(context);
+      v8::Isolate::Scope isolate_scope(isolate);
+      v8::HandleScope handle_scope(isolate);
+      v8::Local<v8::Context> context = v8::Context::New(isolate);
+      v8::Context::Scope context_scope(context);
 
-    // Read header for info
-    if (data.size() >= 32) {
-      const uint8_t* hdr = (const uint8_t*)data.data();
-      uint32_t magic = hdr[0] | (hdr[1]<<8) | (hdr[2]<<16) | (hdr[3]<<24);
-      uint32_t vhash = hdr[4] | (hdr[5]<<8) | (hdr[6]<<16) | (hdr[7]<<24);
-      uint32_t payload_len = hdr[20] | (hdr[21]<<8) | (hdr[22]<<16) | (hdr[23]<<24);
-      printf("[%zu] %s: magic=0x%08x vhash=0x%08x payload=%u ",
-             i, fname.c_str(), magic, vhash, payload_len);
-    }
+      if (data.size() >= 32) {
+        const uint8_t* hdr = (const uint8_t*)data.data();
+        uint32_t magic = hdr[0] | (hdr[1]<<8) | (hdr[2]<<16) | (hdr[3]<<24);
+        uint32_t payload_len = hdr[20] | (hdr[21]<<8) | (hdr[22]<<16) | (hdr[23]<<24);
+        printf("=== Module: %s (magic=0x%08x payload=%u) ===\n\n",
+               fname.c_str(), magic, payload_len);
+      }
 
-    auto cached_data = std::make_unique<v8::ScriptCompiler::CachedData>(
-        (const uint8_t*)data.data(), (int)data.size(),
-        v8::ScriptCompiler::CachedData::BufferNotOwned);
+      auto cached = std::make_unique<v8::ScriptCompiler::CachedData>(
+          (const uint8_t*)data.data(), (int)data.size(),
+          v8::ScriptCompiler::CachedData::BufferNotOwned);
 
-    auto source_str = v8::String::NewFromUtf8(isolate, "").ToLocalChecked();
-    v8::ScriptOrigin origin(isolate, source_str);
-    v8::ScriptCompiler::Source source(source_str, origin, cached_data.get());
+      auto empty = v8::String::NewFromUtf8(isolate, "").ToLocalChecked();
+      v8::ScriptOrigin origin(empty);
+      v8::ScriptCompiler::Source source(empty, origin, cached.get());
 
-    auto maybe_sfi = v8::ScriptCompiler::CompileUnboundScript(
-        isolate, &source, v8::ScriptCompiler::kConsumeCodeCache);
+      auto maybe_sfi = v8::ScriptCompiler::CompileUnboundScript(
+          isolate, &source, v8::ScriptCompiler::kConsumeCodeCache);
 
-    if (maybe_sfi.IsEmpty()) {
-      // Try without cached data (as regular empty script)
-      printf("BYTECODE-REJECTED\n");
-      fail++;
-    } else {
+      if (maybe_sfi.IsEmpty()) {
+        printf("\n[REJECTED - sanity check or format mismatch]\n");
+        _exit(1);
+      }
+
       auto sfi = maybe_sfi.ToLocalChecked();
       auto bound = sfi->BindToCurrentContext();
       auto script = v8::Local<v8::Script>::Cast(bound);
-
       auto result = script->Run(context);
-      if (!result.IsEmpty()) {
-        auto global = context->Global();
-        auto props = global->GetOwnPropertyNames(context).ToLocalChecked();
-        printf("OK (%d exports)\n", props->Length());
-      } else {
-        printf("OK (no exports)\n");
-      }
-      success++;
+
+      printf("\n=== End of module ===\n");
+      _exit(0);
     }
+
+    // Parent: read pipe output
+    close(pipefd[1]);
+    char buf[65536];
+    std::string output;
+    ssize_t n;
+    while ((n = read(pipefd[0], buf, sizeof(buf))) > 0)
+      output.append(buf, n);
+    close(pipefd[0]);
+
+    int status;
+    waitpid(pid, &status, 0);
+    bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+
+    // Write output to log file
+    std::ofstream log(log_path);
+    log << output;
+    log.close();
+
+    printf("[%zu] %s: %s (%zu bytes)\n",
+           i, fname.c_str(), ok ? "OK" : "REJECTED", output.size());
+
+    if (ok) success++;
+    else fail++;
+    fflush(stdout);
   }
 
   printf("\n=== Summary: %d success, %d failed out of %zu ===\n",
@@ -132,5 +154,5 @@ int main(int argc, char* argv[]) {
   isolate->Dispose();
   v8::V8::Dispose();
   v8::V8::DisposePlatform();
-  return 0;
+  return fail > 0 ? 1 : 0;
 }
