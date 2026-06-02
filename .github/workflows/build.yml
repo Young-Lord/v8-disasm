@@ -63,12 +63,7 @@ jobs:
       - name: Build d8 (release + disassembler)
         run: |
           cd v8
-          gn gen out/release --args='is_debug=false \
-            v8_enable_disassembler=true \
-            v8_enable_object_print=true \
-            v8_enable_pointer_compression=true \
-            treat_warnings_as_errors=false \
-            v8_enable_i18n_support=true'
+          gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true treat_warnings_as_errors=false v8_enable_i18n_support=true'
           ninja -C out/release d8
         timeout-minutes: 120
 
