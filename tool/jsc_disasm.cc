@@ -1,148 +1,42 @@
-// jsc_disasm.cc - Load .jsc (V8 bytecode) and disassemble with --print-bytecode
+// jsc_disasm.cc - Load .jsc (V8 SerializedCodeData) and disassemble with --print-bytecode
 // Compile: g++ -std=c++17 -I v8/include jsc_disasm.cc -o jsc_disasm \
-//          -L v8/out/release -lv8_monolith -pthread -licui18n -licuuc
+//          -L v8/out/release -lv8_monolith -pthread -licui18n -licuuc -licudata
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <libplatform/libplatform.h>
 #include <v8.h>
 
-class JSCDisassembler {
-public:
-  JSCDisassembler(const std::string& module_dir, const std::string& out_dir)
-      : module_dir_(module_dir), out_dir_(out_dir) {}
+std::string ReadFile(const std::string& path) {
+  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  if (!file) return "";
+  size_t size = file.tellg();
+  file.seekg(0);
+  std::string data(size, '\0');
+  file.read(&data[0], size);
+  return data;
+}
 
-  bool Init() {
-    v8::V8::InitializeICUDefaultLocation("");
-    platform_ = v8::platform::NewDefaultPlatform();
-    v8::V8::InitializePlatform(platform_.get());
-    v8::V8::Initialize();
-
-    v8::Isolate::CreateParams create_params;
-    create_params.array_buffer_allocator =
-        v8::ArrayBuffer::Allocator::NewDefaultAllocator();
-    isolate_ = v8::Isolate::New(create_params);
-    return isolate_ != nullptr;
+std::vector<std::string> ListJSCFiles(const std::string& dir) {
+  std::vector<std::string> files;
+  DIR* d = opendir(dir.c_str());
+  if (!d) return files;
+  struct dirent* entry;
+  while ((entry = readdir(d)) != nullptr) {
+    std::string name = entry->d_name;
+    if (name.size() > 4 && name.substr(name.size() - 4) == ".jsc")
+      files.push_back(name);
   }
-
-  void Run() {
-    auto files = ListJSCFiles();
-    printf("Found %zu .jsc files\n", files.size());
-
-    for (size_t i = 0; i < files.size(); i++) {
-      auto& f = files[i];
-      printf("[%zu/%zu] Processing %s ... ", i + 1, files.size(), f.c_str());
-      fflush(stdout);
-
-      std::string data = ReadFile(module_dir_ + "/" + f);
-      if (data.empty()) {
-        printf("SKIP (empty)\n");
-        continue;
-      }
-
-      v8::Isolate::Scope isolate_scope(isolate_);
-      v8::HandleScope handle_scope(isolate_);
-      v8::Local<v8::Context> context = v8::Context::New(isolate_);
-      v8::Context::Scope context_scope(context);
-
-      // Create cached data from the .jsc content
-      // Note: .jsc has 32-byte SerializedCodeData header, then bytecode
-      auto cached_data = std::make_unique<v8::ScriptCompiler::CachedData>(
-          reinterpret_cast<const uint8_t*>(data.data()),
-          static_cast<int>(data.size()),
-          v8::ScriptCompiler::CachedData::BufferNotOwned);
-
-      // Create source with cached data
-      v8::Local<v8::String> source_code =
-          v8::String::NewFromUtf8(isolate_, "").ToLocalChecked();
-      v8::ScriptOrigin origin(isolate_, source_code);
-      v8::ScriptCompiler::Source source(source_code, origin, cached_data.get());
-
-      // Try to compile with consumed cached data
-      auto result = v8::ScriptCompiler::CompileUnboundScript(
-          isolate_, &source, v8::ScriptCompiler::kConsumeCodeCache);
-
-      if (result.IsEmpty()) {
-        printf("FAILED (rejected)\n");
-        continue;
-      }
-
-      // Bound the script to run it
-      auto bound = result.ToLocalChecked()->BindToCurrentContext();
-      auto script = v8::Local<v8::Script>::Cast(bound);
-
-      // Try running to see exports  
-      auto run_result = script->Run(context);
-      if (!run_result.IsEmpty()) {
-        // Get global object to see what was exported
-        auto global = context->Global();
-        auto prop_names = global->GetOwnPropertyNames(context).ToLocalChecked();
-        printf("OK (%d exports)\n", prop_names->Length());
-      } else {
-        printf("OK\n");
-      }
-
-      // Output file name
-      std::string base_name = f;
-      auto dot = base_name.rfind('.');
-      if (dot != std::string::npos) base_name = base_name.substr(0, dot);
-
-      // Save source file name map
-      std::string info_path = out_dir_ + "/" + base_name + ".info";
-      std::ofstream info_file(info_path);
-      if (info_file) {
-        if (!result.IsEmpty()) {
-          auto sfi = result.ToLocalChecked();
-          // We can also try to get script info
-        }
-        info_file.close();
-      }
-    }
-  }
-
-  void Shutdown() {
-    if (isolate_) isolate_->Dispose();
-    v8::V8::Dispose();
-    v8::V8::DisposePlatform();
-  }
-
-private:
-  std::vector<std::string> ListJSCFiles() {
-    std::vector<std::string> files;
-    DIR* dir = opendir(module_dir_.c_str());
-    if (!dir) return files;
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-      std::string name = entry->d_name;
-      if (name.size() > 4 && name.substr(name.size() - 4) == ".jsc") {
-        files.push_back(name);
-      }
-    }
-    closedir(dir);
-    std::sort(files.begin(), files.end());
-    return files;
-  }
-
-  std::string ReadFile(const std::string& path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) return "";
-    size_t size = file.tellg();
-    file.seekg(0);
-    std::string data(size, '\0');
-    file.read(&data[0], size);
-    return data;
-  }
-
-  std::string module_dir_;
-  std::string out_dir_;
-  std::unique_ptr<v8::Platform> platform_;
-  v8::Isolate* isolate_ = nullptr;
-};
+  closedir(d);
+  std::sort(files.begin(), files.end());
+  return files;
+}
 
 int main(int argc, char* argv[]) {
   if (argc < 3) {
@@ -150,13 +44,93 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  JSCDisassembler disasm(argv[1], argv[2]);
-  if (!disasm.Init()) {
-    fprintf(stderr, "Failed to initialize V8\n");
-    return 1;
+  std::string module_dir = argv[1];
+  std::string out_dir = argv[2];
+
+  // Enable V8 flags for bytecode printing
+  v8::V8::SetFlagsFromString("--print-bytecode");
+  v8::V8::SetFlagsFromString("--print-bytecode-filter=*");
+  v8::V8::SetFlagsFromString("--trace-deserialization");
+
+  v8::V8::InitializeICUDefaultLocation(argv[0]);
+  auto platform = v8::platform::NewDefaultPlatform();
+  v8::V8::InitializePlatform(platform.get());
+  v8::V8::Initialize();
+
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator =
+      v8::ArrayBuffer::Allocator::NewDefaultAllocator();
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
+
+  auto files = ListJSCFiles(module_dir);
+  printf("=== Found %zu .jsc files ===\n\n", files.size());
+
+  int success = 0, fail = 0;
+  for (size_t i = 0; i < files.size(); i++) {
+    auto& fname = files[i];
+    std::string data = ReadFile(module_dir + "/" + fname);
+    if (data.empty()) {
+      printf("[%zu] %s: EMPTY\n", i, fname.c_str());
+      continue;
+    }
+
+    // Redirect stdout to capture bytecode output
+    // We'll use a pipe approach - redirect to log file per module
+    std::string log_path = out_dir + "/" + fname + ".log";
+
+    v8::Isolate::Scope isolate_scope(isolate);
+    v8::HandleScope handle_scope(isolate);
+
+    v8::Local<v8::Context> context = v8::Context::New(isolate);
+    v8::Context::Scope context_scope(context);
+
+    // Read header for info
+    if (data.size() >= 32) {
+      const uint8_t* hdr = (const uint8_t*)data.data();
+      uint32_t magic = hdr[0] | (hdr[1]<<8) | (hdr[2]<<16) | (hdr[3]<<24);
+      uint32_t vhash = hdr[4] | (hdr[5]<<8) | (hdr[6]<<16) | (hdr[7]<<24);
+      uint32_t payload_len = hdr[20] | (hdr[21]<<8) | (hdr[22]<<16) | (hdr[23]<<24);
+      printf("[%zu] %s: magic=0x%08x vhash=0x%08x payload=%u ",
+             i, fname.c_str(), magic, vhash, payload_len);
+    }
+
+    auto cached_data = std::make_unique<v8::ScriptCompiler::CachedData>(
+        (const uint8_t*)data.data(), (int)data.size(),
+        v8::ScriptCompiler::CachedData::BufferNotOwned);
+
+    auto source_str = v8::String::NewFromUtf8(isolate, "").ToLocalChecked();
+    v8::ScriptOrigin origin(isolate, source_str);
+    v8::ScriptCompiler::Source source(source_str, origin, cached_data.get());
+
+    auto maybe_sfi = v8::ScriptCompiler::CompileUnboundScript(
+        isolate, &source, v8::ScriptCompiler::kConsumeCodeCache);
+
+    if (maybe_sfi.IsEmpty()) {
+      // Try without cached data (as regular empty script)
+      printf("BYTECODE-REJECTED\n");
+      fail++;
+    } else {
+      auto sfi = maybe_sfi.ToLocalChecked();
+      auto bound = sfi->BindToCurrentContext();
+      auto script = v8::Local<v8::Script>::Cast(bound);
+
+      auto result = script->Run(context);
+      if (!result.IsEmpty()) {
+        auto global = context->Global();
+        auto props = global->GetOwnPropertyNames(context).ToLocalChecked();
+        printf("OK (%d exports)\n", props->Length());
+      } else {
+        printf("OK (no exports)\n");
+      }
+      success++;
+    }
   }
 
-  disasm.Run();
-  disasm.Shutdown();
+  printf("\n=== Summary: %d success, %d failed out of %zu ===\n",
+         success, fail, files.size());
+
+  isolate->Dispose();
+  v8::V8::Dispose();
+  v8::V8::DisposePlatform();
   return 0;
 }
