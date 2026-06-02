@@ -1,0 +1,99 @@
+name: Build V8 Disassembler
+
+on: [push, workflow_dispatch]
+
+env:
+  V8_TAG: 13.8.258.18
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config git subversion \
+            curl wget build-essential python3 python-is-python3 \
+            xz-utils zip p7zip-full libglib2.0-dev libicu-dev \
+            ninja-build
+
+      - name: Cache depot_tools
+        id: cache-depot
+        uses: actions/cache@v4
+        with:
+          path: depot_tools
+          key: depot-tools-${{ runner.os }}
+
+      - name: Get depot_tools
+        if: steps.cache-depot.outputs.cache-hit != 'true'
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        timeout-minutes: 30
+
+      - name: Setup PATH
+        run: |
+          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+
+      - name: Cache V8 source
+        id: cache-v8
+        uses: actions/cache@v4
+        with:
+          path: v8
+          key: v8-src-${{ env.V8_TAG }}-${{ runner.os }}
+
+      - name: Fetch V8 source
+        if: steps.cache-v8.outputs.cache-hit != 'true'
+        run: |
+          fetch v8
+          cd v8
+          git checkout ${{ env.V8_TAG }}
+          gclient sync -f
+        timeout-minutes: 60
+
+      - name: Apply sanity check patch
+        run: |
+          cd v8
+          git apply ${{ github.workspace }}/patches/sanity_check.patch || \
+          echo "Patch may have already been applied"
+          echo "=== Checking patch ==="
+          grep -n "kSuccess" src/snapshot/code-serializer.cc | head -20
+
+      - name: Build d8 (release + disassembler)
+        run: |
+          cd v8
+          gn gen out/release --args='is_debug=false \
+            v8_enable_disassembler=true \
+            v8_enable_object_print=true \
+            v8_enable_pointer_compression=false \
+            treat_warnings_as_errors=false \
+            v8_enable_i18n_support=true'
+          ninja -C out/release d8
+        timeout-minutes: 120
+
+      - name: Build jsc_disasm tool
+        run: |
+          cd v8
+          g++ -std=c++17 -I include \
+            ${{ github.workspace }}/tool/jsc_disasm.cc \
+            -o ${{ github.workspace }}/jsc_disasm \
+            -L out/release -lv8_monolith -pthread -licui18n -licuuc
+          echo "=== Tool built ==="
+          ls -la ${{ github.workspace }}/jsc_disasm
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp v8/out/release/d8 dist/
+          cp v8/out/release/icudtl.dat dist/
+          cp ${{ github.workspace }}/jsc_disasm dist/
+          cp -r v8/include dist/v8_include
+          echo "=== dist contents ==="
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v8-disasm-tools
+          path: dist/
+          compression-level: 9
