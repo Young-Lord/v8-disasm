@@ -75,7 +75,7 @@ jobs:
           name: v8-build
           path: |
             v8/out/release/obj/libv8_monolith.a
-            v8/out/release/obj/v8_libplatform/libv8_libplatform.a
+            v8/out/release/obj/libv8_libplatform.a
             v8/include/
             v8/third_party/llvm-build/Release+Asserts/bin/clang++
           retention-days: 1
@@ -102,7 +102,7 @@ jobs:
             tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
-            v8/out/release/obj/v8_libplatform/libv8_libplatform.a \
+            v8/out/release/obj/libv8_libplatform.a \
             -pthread -Wl,-z,ignore
           echo "=== Tool built ==="
           ls -la jsc_disasm
