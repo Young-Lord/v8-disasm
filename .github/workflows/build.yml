@@ -97,8 +97,10 @@ jobs:
           chmod +x v8/third_party/llvm-build/Release+Asserts/bin/clang++
           find v8/out/release/obj -name '*.a' | sort
           CLANG=v8/third_party/llvm-build/Release+Asserts/bin/clang++
+          GCC_TOOLCHAIN=$(dirname $(dirname $(g++ -print-libgcc-file-name)))
           echo "Using clang++: $CLANG"
-          $CLANG -std=c++20 -I v8/include \
+          echo "GCC toolchain: $GCC_TOOLCHAIN"
+          $CLANG -std=c++20 --gcc-toolchain=$GCC_TOOLCHAIN -I v8/include \
             tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
