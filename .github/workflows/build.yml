@@ -92,18 +92,18 @@ jobs:
           name: v8-build
           path: v8
 
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y lld
+
       - name: Build jsc_disasm tool
         run: |
-          chmod +x v8/third_party/llvm-build/Release+Asserts/bin/lld
           find v8/out/release/obj -name '*.a' | sort
-          LLD=v8/third_party/llvm-build/Release+Asserts/bin/lld
-          echo "Using lld: $LLD"
           g++ -std=c++20 -I v8/include \
             tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
             v8/out/release/obj/libv8_libplatform.a \
-            -pthread -fuse-ld=$PWD/$LLD
+            -pthread -fuse-ld=lld
           echo "=== Tool built ==="
           ls -la jsc_disasm
 
