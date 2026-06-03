@@ -69,15 +69,22 @@ jobs:
           ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 
+      - name: Convert thin archives to full
+        run: |
+          cd v8/out/release/obj
+          cp libv8_libplatform.a libv8_libplatform_full.a
+          ar -x libv8_libplatform.a
+          ar -rcs libv8_libplatform_full.a *.o
+          rm -f *.o
+
       - name: Upload V8 build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: v8-build
           path: |
             v8/out/release/obj/libv8_monolith.a
-            v8/out/release/obj/libv8_libplatform.a
+            v8/out/release/obj/libv8_libplatform_full.a
             v8/include/
-            v8/third_party/llvm-build/Release+Asserts/bin/clang++
           retention-days: 1
 
   disasm:
@@ -102,6 +109,7 @@ jobs:
             tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
+            v8/out/release/obj/libv8_libplatform_full.a \
             -pthread -fuse-ld=lld
           echo "=== Tool built ==="
           ls -la jsc_disasm
