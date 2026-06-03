@@ -115,19 +115,13 @@ jobs:
           echo "=== Tool built ==="
           ls -lh jsc_disasm
 
-      - name: Quick smoke test
-        run: |
-          cp v8/out/release/icudtl.dat .
-          timeout 10 ./jsc_disasm 2>&1 || true
-          echo "=== Smoke test exit code: $? ==="
-
       - name: Upload tool binary + icudtl.dat
         uses: actions/upload-artifact@v4
         with:
           name: jsc-disasm-tool
           path: |
             jsc_disasm
-            icudtl.dat
+            v8/out/release/icudtl.dat
           retention-days: 1
 
   disasm:
