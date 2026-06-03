@@ -71,13 +71,13 @@ jobs:
 
       - name: Convert thin archives to full
         run: |
+          LLVM_AR=$(find v8/third_party/llvm-build/Release+Asserts/bin -name 'llvm-ar' 2>/dev/null | head -1)
+          echo "Using llvm-ar: $LLVM_AR"
           cd v8/out/release/obj
-          ar -M <<EOF
-          create libv8_libplatform_full.a
-          addmod libv8_libplatform.a
-          save
-          end
-          EOF
+          mkdir -p _tmp && cd _tmp
+          $LLVM_AR x ../libv8_libplatform.a
+          $LLVM_AR rcs ../libv8_libplatform_full.a *.o
+          cd .. && rm -rf _tmp
 
       - name: Upload V8 build artifacts
         uses: actions/upload-artifact@v4
