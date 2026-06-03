@@ -72,10 +72,12 @@ jobs:
       - name: Convert thin archives to full
         run: |
           cd v8/out/release/obj
-          cp libv8_libplatform.a libv8_libplatform_full.a
-          ar -x libv8_libplatform.a
-          ar -rcs libv8_libplatform_full.a *.o
-          rm -f *.o
+          ar -M <<EOF
+          create libv8_libplatform_full.a
+          addmod libv8_libplatform.a
+          save
+          end
+          EOF
 
       - name: Upload V8 build artifacts
         uses: actions/upload-artifact@v4
