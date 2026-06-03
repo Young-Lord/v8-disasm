@@ -4,7 +4,7 @@ env:
   V8_TAG: 13.8.258.18
 
 jobs:
-  build-and-disasm:
+  build-v8:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,6 @@ jobs:
         if: steps.cache-d8.outputs.cache-hit != 'true'
         run: |
           cd v8
-          # Replace sanity check bodies with kSuccess using sed
           sed -i '/SerializedCodeSanityCheckResult SerializedCodeData::SanityCheckWithoutSource/,/^}/c\
           SerializedCodeSanityCheckResult SerializedCodeData::SanityCheckWithoutSource(\
               uint32_t expected_ro_snapshot_checksum) const {\
@@ -66,19 +65,41 @@ jobs:
               uint32_t expected_source_hash) const {\
             return SerializedCodeSanityCheckResult::kSuccess;\
           }' src/snapshot/code-serializer.cc
-          grep -n "kSuccess" src/snapshot/code-serializer.cc | head -10
           gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true v8_monolithic=true v8_use_external_startup_data=false treat_warnings_as_errors=false v8_enable_i18n_support=true use_crel=false'
           ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 
+      - name: Upload V8 build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-build
+          path: |
+            v8/out/release/obj/libv8_monolith.a
+            v8/out/release/obj/v8_libplatform/libv8_libplatform.a
+            v8/include/
+            v8/third_party/llvm-build/Release+Asserts/bin/clang++
+          retention-days: 1
+
+  disasm:
+    runs-on: ubuntu-22.04
+    needs: build-v8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download V8 build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: v8-build
+          path: v8
+
       - name: Build jsc_disasm tool
         run: |
+          chmod +x v8/third_party/llvm-build/Release+Asserts/bin/clang++
           find v8/out/release/obj -name '*.a' | sort
-          CLANG=$(find v8/third_party/llvm-build/Release+Asserts/bin -name 'clang++' 2>/dev/null | head -1)
-          if [ -z "$CLANG" ]; then CLANG="v8/third_party/llvm-build/Release+Asserts/bin/clang++"; fi
+          CLANG=v8/third_party/llvm-build/Release+Asserts/bin/clang++
           echo "Using clang++: $CLANG"
           $CLANG -std=c++20 -I v8/include \
-            ${{ github.workspace }}/tool/jsc_disasm.cc \
+            tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
             v8/out/release/obj/v8_libplatform/libv8_libplatform.a \
