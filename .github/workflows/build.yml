@@ -43,7 +43,7 @@ jobs:
         id: cache-d8
         with:
           path: v8/out/release
-          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}
+          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}-v2
 
       - name: Patch sanity checks + build
         if: steps.cache-d8.outputs.cache-hit != 'true'
