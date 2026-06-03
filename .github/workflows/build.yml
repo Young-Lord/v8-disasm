@@ -75,10 +75,11 @@ jobs:
           name: v8-build
           path: |
             v8/out/release/obj/libv8_monolith.a
+            v8/out/release/icudtl.dat
             v8/include/
           retention-days: 1
 
-  disasm:
+  link-tool:
     runs-on: ubuntu-22.04
     needs: build-v8
     steps:
@@ -95,6 +96,10 @@ jobs:
 
       - name: Build jsc_disasm tool
         run: |
+          echo "=== libv8_monolith.a size ==="
+          ls -lh v8/out/release/obj/libv8_monolith.a
+          echo "=== icudtl.dat ==="
+          ls -lh v8/out/release/icudtl.dat
           clang++ -std=c++20 -I v8/include \
             -DV8_COMPRESS_POINTERS \
             -DV8_COMPRESS_POINTERS_IN_SHARED_CAGE \
@@ -108,10 +113,37 @@ jobs:
             -Wl,--start-group v8/out/release/obj/libv8_monolith.a -Wl,--end-group \
             -ldl -lrt -pthread
           echo "=== Tool built ==="
-          ls -la jsc_disasm
+          ls -lh jsc_disasm
+
+      - name: Quick smoke test
+        run: |
+          cp v8/out/release/icudtl.dat .
+          timeout 10 ./jsc_disasm 2>&1 || true
+          echo "=== Smoke test exit code: $? ==="
+
+      - name: Upload tool binary + icudtl.dat
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsc-disasm-tool
+          path: |
+            jsc_disasm
+            icudtl.dat
+          retention-days: 1
+
+  disasm:
+    runs-on: ubuntu-22.04
+    needs: link-tool
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download jsc_disasm tool
+        uses: actions/download-artifact@v4
+        with:
+          name: jsc-disasm-tool
 
       - name: Disassemble all 795 modules
         run: |
+          chmod +x jsc_disasm
           mkdir -p disasm_output
           ls modules/*.jsc | wc -l
           ./jsc_disasm modules disasm_output
