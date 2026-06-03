@@ -43,7 +43,7 @@ jobs:
         id: cache-d8
         with:
           path: v8/out/release
-          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}-v3
+          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}-v4
 
       - name: Patch sanity checks + build
         if: steps.cache-d8.outputs.cache-hit != 'true'
@@ -67,7 +67,7 @@ jobs:
             return SerializedCodeSanityCheckResult::kSuccess;\
           }' src/snapshot/code-serializer.cc
           grep -n "kSuccess" src/snapshot/code-serializer.cc | head -10
-          gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true v8_monolithic=true v8_use_external_startup_data=false treat_warnings_as_errors=false v8_enable_i18n_support=true'
+          gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true v8_monolithic=true v8_use_external_startup_data=false treat_warnings_as_errors=false v8_enable_i18n_support=true use_crel=false'
           ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 
@@ -77,7 +77,7 @@ jobs:
           g++ -std=c++20 -I v8/include \
             ${{ github.workspace }}/tool/jsc_disasm.cc \
             -o jsc_disasm \
-            v8/out/release/obj/libv8_monolith.a -pthread -licui18n -licuuc -licudata
+            v8/out/release/obj/libv8_monolith.a -pthread -Wl,-z,ignore
           echo "=== Tool built ==="
           ls -la jsc_disasm
 
