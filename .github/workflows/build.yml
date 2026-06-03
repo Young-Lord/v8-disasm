@@ -12,12 +12,26 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config git subversion build-essential python3 python-is-python3 ninja-build
 
+      - uses: actions/cache@v4
+        id: cache-depot
+        with:
+          path: depot_tools
+          key: depot-tools
+
       - name: Get depot_tools
-        run: |
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+        if: steps.cache-depot.outputs.cache-hit != 'true'
+        run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+      - run: echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+
+      - uses: actions/cache@v4
+        id: cache-v8
+        with:
+          path: v8
+          key: v8-src-${{ env.V8_TAG }}
 
       - name: Fetch V8 source at ${{ env.V8_TAG }}
+        if: steps.cache-v8.outputs.cache-hit != 'true'
         run: |
           fetch v8
           cd v8
@@ -25,20 +39,24 @@ jobs:
           gclient sync -f
         timeout-minutes: 60
 
-      - name: Apply sanity check patch
+      - uses: actions/cache@v4
+        id: cache-d8
+        with:
+          path: v8/out/release
+          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}
+
+      - name: Apply patch and build
+        if: steps.cache-d8.outputs.cache-hit != 'true'
         run: |
           cd v8
           git apply ${{ github.workspace }}/patches/sanity_check.patch || true
-
-      - name: Build d8 + v8_monolith (release + disassembler + pointer comp)
-        run: |
-          cd v8
           gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true treat_warnings_as_errors=false v8_enable_i18n_support=true'
           ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 
       - name: Build jsc_disasm tool
         run: |
+          ls -la v8/out/release/obj/libv8_monolith.a
           g++ -std=c++20 -I v8/include \
             ${{ github.workspace }}/tool/jsc_disasm.cc \
             -o jsc_disasm \
