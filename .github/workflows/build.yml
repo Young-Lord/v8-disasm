@@ -102,7 +102,6 @@ jobs:
             tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a \
-            v8/out/release/obj/libv8_libplatform.a \
             -pthread -fuse-ld=lld
           echo "=== Tool built ==="
           ls -la jsc_disasm
