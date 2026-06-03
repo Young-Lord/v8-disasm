@@ -30,11 +30,11 @@ jobs:
           cd v8
           git apply ${{ github.workspace }}/patches/sanity_check.patch || true
 
-      - name: Build d8 (release + disassembler + pointer comp)
+      - name: Build d8 + v8_monolith (release + disassembler + pointer comp)
         run: |
           cd v8
           gn gen out/release --args='is_debug=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true treat_warnings_as_errors=false v8_enable_i18n_support=true'
-          ninja -C out/release d8
+          ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 
       - name: Build jsc_disasm tool
@@ -42,7 +42,7 @@ jobs:
           g++ -std=c++20 -I v8/include \
             ${{ github.workspace }}/tool/jsc_disasm.cc \
             -o jsc_disasm \
-            -L v8/out/release -lv8_monolith -pthread -licui18n -licuuc -licudata
+            v8/out/release/obj/libv8_monolith.a -pthread -licui18n -licuuc -licudata
           echo "=== Tool built ==="
           ls -la jsc_disasm
 
