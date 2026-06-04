@@ -95,53 +95,30 @@ jobs:
           name: v8-build
           path: v8
 
+      - name: Build and test minimal V8 tool
+        run: |
+          g++ -std=c++20 -I v8/include -o test_v8 \
+            ${{ github.workspace }}/tool/test_v8.cc \
+            v8/out/release/obj/libv8_monolith.a -pthread -ldl -lrt
+          echo "=== Running minimal test ==="
+          ./test_v8 2>&1
+          echo "=== Test done ==="
+
       - name: Build jsc_disasm tool
         run: |
-          echo "=== libv8_monolith.a size ==="
-          ls -lh v8/out/release/obj/libv8_monolith.a
-          echo "=== icudtl.dat ==="
-          ls -lh v8/out/release/icudtl.dat
-          clang++ -std=c++20 -I v8/include \
-            -DV8_COMPRESS_POINTERS \
-            -DV8_COMPRESS_POINTERS_IN_SHARED_CAGE \
-            -DV8_31BIT_SMIS_ON_64BIT_ARCH \
-            -DV8_ARRAY_BUFFER_INTERNAL_FIELD_COUNT=0 \
-            -DV8_ARRAY_BUFFER_VIEW_INTERNAL_FIELD_COUNT=0 \
-            -DV8_PROMISE_INTERNAL_FIELD_COUNT=0 \
-            tool/jsc_disasm.cc \
+          g++ -std=c++20 -I v8/include \
+            ${{ github.workspace }}/tool/jsc_disasm.cc \
             -o jsc_disasm \
-            -fno-rtti -fuse-ld=gold \
-            -Wl,--start-group v8/out/release/obj/libv8_monolith.a -Wl,--end-group \
-            -ldl -lrt -pthread
+            v8/out/release/obj/libv8_monolith.a -pthread -ldl -lrt
           echo "=== Tool built ==="
-          ls -lh jsc_disasm
+          ls -la jsc_disasm
 
-      - name: Upload tool binary + icudtl.dat
-        uses: actions/upload-artifact@v4
-        with:
-          name: jsc-disasm-tool
-          path: |
-            jsc_disasm
-            v8/out/release/icudtl.dat
-          retention-days: 1
-
-  disasm:
-    runs-on: ubuntu-22.04
-    needs: link-tool
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download jsc_disasm tool
-        uses: actions/download-artifact@v4
-        with:
-          name: jsc-disasm-tool
-
-      - name: Disassemble all 795 modules
+      - name: Test single module
         run: |
-          chmod +x jsc_disasm
           mkdir -p disasm_output
-          ls modules/*.jsc | wc -l
-          ./jsc_disasm modules disasm_output
+          ./jsc_disasm modules disasm_output || echo "CRASHED"
+          ls -la disasm_output/ | head -5
+          cat disasm_output/*.txt 2>/dev/null | head -50
 
       - name: Upload disassembly results
         uses: actions/upload-artifact@v4

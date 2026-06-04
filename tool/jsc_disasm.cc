@@ -46,10 +46,15 @@ int main(int argc, char* argv[]) {
   v8::V8::SetFlagsFromString("--print-bytecode-filter=*");
   v8::V8::SetFlagsFromString("--single-threaded");
 
+  fprintf(stderr, "Step 1: Init ICU...\n");
   v8::V8::InitializeICUDefaultLocation(argv[0]);
+  fprintf(stderr, "Step 2: Create platform...\n");
   auto platform = v8::platform::NewDefaultPlatform();
+  fprintf(stderr, "Step 3: Init platform...\n");
   v8::V8::InitializePlatform(platform.get());
+  fprintf(stderr, "Step 4: Init V8...\n");
   v8::V8::Initialize();
+  fprintf(stderr, "Step 5: Create isolate...\n");
 
   v8::Isolate::CreateParams cp;
   cp.array_buffer_allocator = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
