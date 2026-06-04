@@ -110,7 +110,7 @@ jobs:
             -DV8_PROMISE_INTERNAL_FIELD_COUNT=0 \
             tool/jsc_disasm.cc \
             -o jsc_disasm \
-            -fno-rtti -fuse-ld=lld -Wl,--no-crel \
+            -fno-rtti -fuse-ld=gold \
             -Wl,--start-group v8/out/release/obj/libv8_monolith.a -Wl,--end-group \
             -ldl -lrt -pthread
           echo "=== Tool built ==="
