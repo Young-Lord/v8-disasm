@@ -97,7 +97,7 @@ jobs:
 
       - name: Build and test minimal V8 tool
         run: |
-          clang++ -std=c++20 -I v8/include -o test_v8 \
+          clang++ -std=c++20 -fuse-ld=lld -I v8/include -o test_v8 \
             ${{ github.workspace }}/tool/test_v8.cc \
             v8/out/release/obj/libv8_monolith.a -pthread -ldl -lrt
           echo "=== Running minimal test ==="
@@ -106,7 +106,7 @@ jobs:
 
       - name: Build jsc_disasm tool
         run: |
-          clang++ -std=c++20 -I v8/include \
+          clang++ -std=c++20 -fuse-ld=lld -I v8/include \
             ${{ github.workspace }}/tool/jsc_disasm.cc \
             -o jsc_disasm \
             v8/out/release/obj/libv8_monolith.a -pthread -ldl -lrt
