@@ -43,7 +43,7 @@ jobs:
         id: cache-d8
         with:
           path: v8/out/release
-          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}-clang-nocxx-v2
+          key: v8-d8-${{ env.V8_TAG }}-${{ runner.arch }}-clang-nocxx-v4
 
       - name: Patch sanity checks + build
         if: steps.cache-d8.outputs.cache-hit != 'true'
@@ -65,7 +65,8 @@ jobs:
               uint32_t expected_source_hash) const {\
             return SerializedCodeSanityCheckResult::kSuccess;\
           }' src/snapshot/code-serializer.cc
-          gn gen out/release --args='is_debug=false is_clang=true use_custom_libcxx=false use_sysroot=false clang_use_chrome_plugins=false enable_rust=false treat_warnings_as_errors=false v8_enable_sandbox=false v8_enable_temporal_support=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true v8_monolithic=true v8_use_external_startup_data=false v8_enable_i18n_support=true'
+          sed -i 's/CHECK_EQ(magic_number_, SerializedData::kMagicNumber);/\/\/ CHECK_EQ(magic_number_, SerializedData::kMagicNumber);/' src/snapshot/deserializer.cc
+          gn gen out/release --args='is_debug=false is_clang=true use_custom_libcxx=false use_sysroot=false clang_use_chrome_plugins=false enable_rust=false treat_warnings_as_errors=false v8_enable_sandbox=true v8_enable_temporal_support=false v8_enable_disassembler=true v8_enable_object_print=true v8_enable_pointer_compression=true v8_monolithic=true v8_use_external_startup_data=false v8_enable_i18n_support=true'
           ninja -C out/release d8 v8_monolith
         timeout-minutes: 120
 

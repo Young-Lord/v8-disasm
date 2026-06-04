@@ -1,3 +1,9 @@
+--- a/src/snapshot/deserializer.cc
++++ b/src/snapshot/deserializer.cc
+@@ -xx,xx +xx,xx @@
+-  CHECK_EQ(magic_number_, SerializedData::kMagicNumber);
++  // CHECK_EQ(magic_number_, SerializedData::kMagicNumber);
+
 --- a/src/snapshot/code-serializer.cc
 +++ b/src/snapshot/code-serializer.cc
 @@ -289,47 +289,15 @@ SerializedCodeSanityCheckResult SerializedCodeData::SanityCheck(
